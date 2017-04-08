@@ -1,0 +1,116 @@
+Planting Predictors of Harvest Yield   by Andrea Brown
+========================================================
+```{r global_options, include=FALSE}
+#Set global options
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+```{r packages}
+# Load all of the packages that you end up using in your analysis.
+
+library(sp)
+library(rgdal)
+library(raster)
+library(RColorBrewer)
+```
+
+# Introduction 
+This dataset contains geospatial data collected by a farmer during the planting of crops and then during the harvesting of those planted crops. The planting data is a sample size of 6,314 locations and include the latitude and longitude of where the crop was planted, the seed variety, seeding rate, seed spacing, and speed. The harvest data is a sample size of 16,626 locations and include the latitude and longitude of where the crop was harvested and the yield at that location. 
+
+The goal of the following analysis is to match the harvest data to the planting data in order to determine the harvest yield at each planting loaction. Then the planting data will be used to determine what planting variables, if any, demonstrate correlation to the harvest yield.
+
+#Method
+At first I pursued the dataset by trying to calculate the distance between all the points using the "great circle distance," which accounts for the curvature of the earth. However, I quickly realized that there were way too many data points to use this method.
+
+To reduce the amount of computation time, I decided to use the raster library. This is essentially a grid system that stores a value within each grid cell. This reduces the computation time from hours to seconds.
+
+### Conversion of Harvest Data into a Raster
+I'll convert the harvest dataframe to a spatial points data frame using the sp library. Then I'll set the projection to WGS1984 for the latitude and longitude coordinates. Next I'll use the raster package to create a grid, or raster, from the spatial extents of the harvest spatial points data frame. Finally, I'll use the rasterize function in the raster package to convert the spatial points data frame to a raster object. And I'll plot the harvest yield data in the raster to make sure everything looks as expected. Next I'll use the raster I developed to interpolate a yield value for each planting data point. Interpolate harvest yield for planting
+
+```{r extract_crop_yield_function}
+extract_crop_yield <- function(planting_filename, 
+                               harvest_filename) {
+  # Load the Data
+  harvest <- read.csv(harvest_filename)
+  planting <- read.csv(planting_filename)
+  
+  # Transform variety from factor levels to integers for value extraction
+  varieties <- levels(planting$variety)
+  planting$variety <- as.integer(planting$variety)
+  
+  # Convert planting data to spatial points 
+  # data frame and set projection
+  planting_pts <- planting
+  coordinates(planting_pts)=c("long","lat")
+  proj4string(planting_pts) <- CRS("+init=epsg:4326")
+  
+  # Convert coordinates to spatial points 
+  # data frame and set projection
+  harvest_pts <- harvest
+  coordinates(harvest_pts)=c("long","lat")
+  proj4string(harvest_pts) <- CRS("+init=epsg:4326")
+  
+  # Create raster from data extents
+  r <- raster(harvest_pts)
+  
+  # Add values to raster
+  planting_raster <- rasterize(planting_pts,r,
+                               field=c("variety",
+                                       "seeding_rate",
+                                       "seed_spacing",
+                                       "speed"))
+  
+  # Plot the values
+  #plot(planting_raster$seeding_rate, 
+  #   xlab='Longitude',
+  #   ylab='Latitude') +
+  #title("Seeding Rate")
+  
+  
+  #extract planting data using raster cell values
+  extract_data <- extract(planting_raster,
+                    harvest_pts,
+                    df=TRUE,
+                    sp=TRUE)
+  
+  #convert spatial data frame to normal data frame
+  extract_data <- as.data.frame(extract_data)
+  
+  # Convert planting variety back to factor levels
+  extract_data$variety <- factor(extract_data$variety, levels = c(1,2),labels = varieties)
+  #levels = seq(1,length(varieties)), 
+  return(extract_data)
+}
+```
+
+
+
+
+```{r run_function_on_csv_files}
+combined_data <- extract_crop_yield('planting_sample_data.csv', 'harvest_sample_data.csv')
+```
+
+```{r plot_extracted_values}
+#plot extracted values
+spplot(data,
+       c("yield"),
+       col.regions=brewer.pal(5, "YlGn"),
+       xlab='longitude',
+       ylab='latitude')
+```
+
+### Data Analysis
+Convert the spatial points data frame back to a normal data frame?
+
+
+
+
+
+
+
+
+
+
+
+
