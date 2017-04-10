@@ -52,7 +52,7 @@ extract_crop_yield <- function(planting_filename,
   proj4string(harvest_pts) <- CRS("+init=epsg:4326")
   
   # Create raster from data extents
-  r <- raster(harvest_pts)
+  r <- raster(harvest_pts,nrows=40, ncols=40)
   
   # Add values to raster
   planting_raster <- rasterize(planting_pts,r,
@@ -62,11 +62,25 @@ extract_crop_yield <- function(planting_filename,
                                        "speed"))
   
   # Plot the values
-  #plot(planting_raster$seeding_rate, 
-  #   xlab='Longitude',
-  #   ylab='Latitude') +
-  #title("Seeding Rate")
+  plot(planting_raster$variety, 
+     xlab='Longitude',
+     ylab='Latitude') +
+  title("Seed Variety")
   
+  plot(planting_raster$seeding_rate, 
+     xlab='Longitude',
+     ylab='Latitude') +
+  title("Seeding Rate")
+  
+  plot(planting_raster$seed_spacing, 
+     xlab='Longitude',
+     ylab='Latitude') +
+  title("Seed Spacing")
+  
+  plot(planting_raster$speed, 
+     xlab='Longitude',
+     ylab='Latitude') +
+  title("Speed")
   
   #extract planting data using raster cell values
   extract_data <- extract(planting_raster,
