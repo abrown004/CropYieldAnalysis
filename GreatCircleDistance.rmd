@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 # Load all of the packages that you end up using in your analysis.
 
 library(sp)
-library(rgdal)
+#library(rgdal)
 library(raster)
 library(RColorBrewer)
 ```
@@ -26,7 +26,7 @@ At first I pursued the dataset by trying to calculate the distance between all t
 To reduce the amount of computation time, I decided to use the raster library. This is essentially a grid system that stores a value within each grid cell. This reduces the computation time from hours to seconds.
 
 ### Conversion of Harvest Data into a Raster
-I'll convert the harvest dataframe to a spatial points data frame using the sp library. Then I'll set the projection to WGS1984 for the latitude and longitude coordinates. Next I'll use the raster package to create a grid, or raster, from the spatial extents of the harvest spatial points data frame. Finally, I'll use the rasterize function in the raster package to convert the spatial points data frame to a raster object. And I'll plot the harvest yield data in the raster to make sure everything looks as expected. Next I'll use the raster I developed to interpolate a yield value for each planting data point. Interpolate harvest yield for planting
+I'll convert the harvest dataframe to a spatial points data frame using the sp library. Then I'll set the projection to WGS1984 for the latitude and longitude coordinates. Next I'll use the raster package to create a grid, or raster, from the spatial extents of the harvest spatial points data frame. Finally, I'll use the rasterize function in the raster package to convert the spatial points data frame to a raster object. And I'll plot the harvest yield data in the raster to make sure everything looks as expected. Next I'll use the raster I developed to interpolate a yield value for each planting data point.
 
 ```{r extract_crop_yield_function}
 extract_crop_yield <- function(planting_filename, 
@@ -35,7 +35,7 @@ extract_crop_yield <- function(planting_filename,
   harvest <- read.csv(harvest_filename)
   planting <- read.csv(planting_filename)
   
-  # Transform variety from factor levels to integers for value extraction
+  # Transform variety from factor levels to integers for raster value extraction
   varieties <- levels(planting$variety)
   planting$variety <- as.integer(planting$variety)
   
@@ -78,39 +78,183 @@ extract_crop_yield <- function(planting_filename,
   extract_data <- as.data.frame(extract_data)
   
   # Convert planting variety back to factor levels
-  extract_data$variety <- factor(extract_data$variety, levels = c(1,2),labels = varieties)
-  #levels = seq(1,length(varieties)), 
+  extract_data$variety <- factor(extract_data$variety,labels = varieties)
+
   return(extract_data)
 }
 ```
 
-
-
-
+Now I'm ready to run the function and save the new data frame to a csv file called "harvest_planting_data.csv"
 ```{r run_function_on_csv_files}
-combined_data <- extract_crop_yield('planting_sample_data.csv', 'harvest_sample_data.csv')
-```
-
-```{r plot_extracted_values}
-#plot extracted values
-spplot(data,
-       c("yield"),
-       col.regions=brewer.pal(5, "YlGn"),
-       xlab='longitude',
-       ylab='latitude')
+data <- extract_crop_yield('planting_sample_data.csv', 'harvest_sample_data.csv')
+write.csv(data, file = "harvest_planting_data.csv")
 ```
 
 ### Data Analysis
-Convert the spatial points data frame back to a normal data frame?
+Now that there is planting-related data at each harvest location, I can begin the exploratory data analysis to identify potential predictors of better harvest yield. Since there is only one dependent variable (yield) and four potential independent variables (variety, seeding rate, seed spacing, and speed), I"ll take the time to look in depth at each variable.
 
+```{r load_libraries}
+#loading the plotting libraries
+library(ggplot2)
+library(dplyr)
+#library(reshape)
+library(GGally)
+library(gridExtra)
+```
 
+### Yield
+The dependent variable. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, although the data is slightly skewed, it appears normally distributed.
 
+```{r distribution_plotting_function}
+box_and_hist <- function(data, variable, binwidth, variable_name) {
+  grid.arrange(
+  ggplot(data = data) +
+    geom_histogram(aes(x = variable), binwidth = binwidth, color = "#099DD9") +
+    xlab(variable_name) +
+    ggtitle('Histogram'),
+  
+  ggplot(aes(x=1, y=variable), data = data) +
+    geom_boxplot( ) +
+    ylab(variable_name) +
+    ggtitle('Box Plot')
+, nrow =1)
+}
+```
 
+```{r yield_distribution}
+box_and_hist(data, data$yield, 20, 'Crop Yield')
+```
 
+### Seed Variety
+Planting variety is the only categorical variable in the dataframe. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, although the data is slightly skewed, it appears normally distributed.
 
+```{r variety_distribution}
+grid.arrange(
+  ggplot(aes(x=variety, y = yield), data = data) +
+    geom_boxplot( ) +
+    ggtitle('Seed Variety Box Plot')
+, nrow =1)
+```
 
+### Seeding Rate
+Seeding rate is next up. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have an outlier of seeding rate = 31.3. The data looks fairly normal without the outliar.
 
+```{r seeding_rate_distribution}
+box_and_hist(data, data$seeding_rate, 1, 'Seeding Rate')
+```
 
+### Seed Spacing
+I'll look at seed spacing next. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have an outlier of seed spacing ~ 6.7 and looks normally distributed if the outlier is removed.
 
+```{r seed_spacing_distribution}
+box_and_hist(data, data$seed_spacing, 0.1, 'Seed Spacing')
+```
 
+### Planting Speed
+Next, I'll look at the speed. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have a left skew and seems to have a couple outliers of speed < 1. This data looks like it has an exponential distribution.
 
+```{r seed_spacing_distribution}
+box_and_hist(data, data$speed, 0.2, 'Speed')
+```
+
+### Overview of Bivariate Relationships
+I'll create a data frame that does not include the identified outliers. And I'll look at the scatterplot of each variable against the crop yield. I'll also apply an exponential transformation to the axis for the planting speed.
+
+```{r remove_outliers}
+clean_data <- subset(data, data$speed > 1 && data$seed_spacing < 6.6 && data$seeding_rate > 31)
+```
+
+```{r scatterplot_function}
+scatter <- function(data, variable, variable_name) {
+  ggplot(aes(x = variable, y = yield), data = data) + 
+  geom_point(size = 1, alpha = 0.5, position = 'jitter') +
+  geom_smooth(method = "lm", se = FALSE,size=1) +
+  labs(x = variable_name, y = "Crop Yield")
+}
+```
+
+### Seed Variety
+I'll look at a box plot again and add the mean. It looks like seed variety "DKC63-33RIB" shows slightly higher crop yield than seed variety "P1498."
+
+```{r seed_variety_box_plot_and_mean}
+grid.arrange(
+  ggplot(aes(x=variety, y = yield), data = data) +
+    geom_boxplot( ) +
+    stat_summary(fun.y = "mean", 
+               geom = "point", 
+               color = "red", 
+               shape = 8, 
+               size = 4) +
+    ggtitle('Seed Variety Box Plot')
+, nrow =1)
+```
+
+### Seeding Rate
+The seeding rate does not look very correlated to crop yield.
+```{r seeding_rate_scatterplot}
+scatter(clean_data, clean_data$seeding_rate,"Seeding Rate")
+cor.test(clean_data$seeding_rate, clean_data$yield)
+```
+
+### Seed Spacing
+It looks like closer seed spacing may be correlated to higher crop yield.
+```{r seeding_rate_scatterplot}
+scatter(clean_data, clean_data$seed_spacing,"Seeding Spacing")
+cor.test(clean_data$seed_spacing, clean_data$yield)
+```
+
+### Planting Speed
+Planting speed does not appear very correlated to the crop yield.
+```{r seeding_rate_scatterplot}
+scatter(clean_data, clean_data$speed,"Speed")
+cor.test(clean_data$speed, clean_data$yield)
+```
+
+# Multi-variate Plots
+Next, I'll take a closer look at my two most promising variables: seed spacing and variety.
+
+```{r multivariate_plot}
+ggplot(aes(x = seed_spacing, y = yield, color = variety), data = clean_data) + 
+  geom_point(size = 1, position = 'jitter') +
+  geom_smooth(method = "lm", se = FALSE,size=1) +
+  scale_colour_brewer(palette = "Reds",
+    guide = guide_legend(title="Seed Variety",
+    override.aes = list(alpha = 1, size = 2))) +
+  labs(x = "Seed Spacing", y = "Crop Yield") +
+  ggtitle('Correlation between Seed Spacing, Seed Variety, and Crop Yield')
+```
+
+#Regression Model
+It's fairly difficult to observe any trends because There's so few points with seed variety "P1498" and not much variation in seed spacing for that seed variety. I'll try to create a regression model out of these variables.
+```{r model_1}
+m1 <- lm(yield ~ seed_spacing, data = clean_data)
+summary(m1)
+```
+
+```{r model_2}
+m2 <- lm(yield ~ I(seed_spacing) + I(as.integer(variety)), data = clean_data)
+summary(m2)
+```
+
+#Analysis of Model Error
+Plugging in the resulting linear regression equation and plotting the error reveals a normally distributed data set. But the error is fairly high compaired to the yield values.
+```{r model_prediction}
+clean_data$pred_yield <- 283.8 - 8.3462*clean_data$seed_spacing
+```
+
+```{r model_error}
+clean_data$SE <- (clean_data$yield - clean_data$pred_yield)
+ggplot(data = clean_data) + 
+  geom_histogram(aes(x = SE,colour = "red"),show.legend = F, binwidth = 0.1) +
+  ggtitle('Error in Predicted Yield')
+```
+
+### Conclusions
+After extracting the planting data into the locations where crop yield was recorded, I analyzed the correlations between the planting data and the assocationed crop yield data. After observing the distributions of the variables and removing outliers, it appeared that seed spacing and seed variety may exhibit correlation to crop yield. Insertion of each variable into a linear regression model demonstrated that reduced seed spacing may be correlated to higher crop yields. Seed variety was not very helpful in predicting the crop yield, which may be due to the small number of data points for seed variety P1498. While the error of the linear regression model is normal, the standard error and the model F-statistic and R-squared values indicate the model is not very good.
+
+### Future Work
+This model has a lot of room for improvement. Ideas to improve the model as well as improve the identification of variables correlated to higher crop yields include:
+- Instead of extracting the planting data into the harvest yield, extract the harvest yield into the planting data. There will be a much smaller sample size, but the yield data may more precisely be associated with the planting data.
+- Decrease the cell size of the raster before extracting the planting data.
+- Collect additional data with the harvest yield, such as the soil moisture, nitrate, phosphorus, etc.
+- Collect additional data throughout the crop cycle. For example, collect monthly soil moisture data and soil temperature data.
