@@ -52,7 +52,7 @@ extract_crop_yield <- function(planting_filename,
   proj4string(harvest_pts) <- CRS("+init=epsg:4326")
   
   # Create raster from data extents
-  r <- raster(harvest_pts)
+  r <- raster(harvest_pts, nrows=30, ncols=30)
   
   # Add values to raster
   planting_raster <- rasterize(planting_pts,r,
@@ -62,10 +62,10 @@ extract_crop_yield <- function(planting_filename,
                                        "speed"))
   
   # Plot the values
-  #plot(planting_raster$seeding_rate, 
-  #   xlab='Longitude',
-  #   ylab='Latitude') +
-  #title("Seeding Rate")
+  plot(planting_raster$seeding_rate, 
+     xlab='Longitude',
+     ylab='Latitude') +
+  title("Seeding Rate")
   
   
   #extract planting data using raster cell values
@@ -101,6 +101,20 @@ library(dplyr)
 library(GGally)
 library(gridExtra)
 ```
+### Cleaning the Data
+It looks like a few outliers are having a big impact on the data, so I'll remove the top 1% and bottom 1% of values and get rid of the NA value prior to analyzing the dataset.
+```{r remove_outliers}
+clean_data <- subset(data, !is.na(variety) 
+                     & !is.na(seeding_rate) 
+                     & !is.na(seed_spacing) 
+                     & !is.na(speed))
+clean_data <- subset(clean_data,speed > quantile(speed,probs = 0.01)
+                     & speed < quantile(speed,probs = 0.99)
+                     & seed_spacing > quantile(seed_spacing,probs= 0.01)
+                     & seed_spacing < quantile(seed_spacing,probs = 0.99)
+                     & seeding_rate > quantile(seeding_rate,probs =0.01)
+                     & seeding_rate < quantile(seeding_rate,probs = 0.99))
+```
 
 ### Yield
 The dependent variable. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, although the data is slightly skewed, it appears normally distributed.
@@ -122,7 +136,7 @@ box_and_hist <- function(data, variable, binwidth, variable_name) {
 ```
 
 ```{r yield_distribution}
-box_and_hist(data, data$yield, 20, 'Crop Yield')
+box_and_hist(clean_data, clean_data$yield, 20, 'Crop Yield')
 ```
 
 ### Seed Variety
@@ -130,7 +144,7 @@ Planting variety is the only categorical variable in the dataframe. I'll take a 
 
 ```{r variety_distribution}
 grid.arrange(
-  ggplot(aes(x=variety, y = yield), data = data) +
+  ggplot(aes(x=variety, y = yield), data = clean_data) +
     geom_boxplot( ) +
     ggtitle('Seed Variety Box Plot')
 , nrow =1)
@@ -140,29 +154,25 @@ grid.arrange(
 Seeding rate is next up. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have an outlier of seeding rate = 31.3. The data looks fairly normal without the outliar.
 
 ```{r seeding_rate_distribution}
-box_and_hist(data, data$seeding_rate, 1, 'Seeding Rate')
+box_and_hist(clean_data, clean_data$seeding_rate, 0.5, 'Seeding Rate')
 ```
 
 ### Seed Spacing
 I'll look at seed spacing next. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have an outlier of seed spacing ~ 6.7 and looks normally distributed if the outlier is removed.
 
 ```{r seed_spacing_distribution}
-box_and_hist(data, data$seed_spacing, 0.1, 'Seed Spacing')
+box_and_hist(clean_data, clean_data$seed_spacing, 0.1, 'Seed Spacing')
 ```
 
 ### Planting Speed
 Next, I'll look at the speed. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, the data appears to have a left skew and seems to have a couple outliers of speed < 1. This data looks like it has an exponential distribution.
 
 ```{r seed_spacing_distribution}
-box_and_hist(data, data$speed, 0.2, 'Speed')
+box_and_hist(clean_data, clean_data$speed, 0.2, 'Speed')
 ```
 
 ### Overview of Bivariate Relationships
 I'll create a data frame that does not include the identified outliers. And I'll look at the scatterplot of each variable against the crop yield. I'll also apply an exponential transformation to the axis for the planting speed.
-
-```{r remove_outliers}
-clean_data <- subset(data, data$speed > 1 && data$seed_spacing < 6.6 && data$seeding_rate > 31)
-```
 
 ```{r scatterplot_function}
 scatter <- function(data, variable, variable_name) {
@@ -178,7 +188,7 @@ I'll look at a box plot again and add the mean. It looks like seed variety "DKC6
 
 ```{r seed_variety_box_plot_and_mean}
 grid.arrange(
-  ggplot(aes(x=variety, y = yield), data = data) +
+  ggplot(aes(x=variety, y = yield), data = clean_data) +
     geom_boxplot( ) +
     stat_summary(fun.y = "mean", 
                geom = "point", 
@@ -217,9 +227,9 @@ Next, I'll take a closer look at my two most promising variables: seed spacing a
 ggplot(aes(x = seed_spacing, y = yield, color = variety), data = clean_data) + 
   geom_point(size = 1, position = 'jitter') +
   geom_smooth(method = "lm", se = FALSE,size=1) +
-  scale_colour_brewer(palette = "Reds",
+  scale_color_brewer(type = "qual", palette = 1,
     guide = guide_legend(title="Seed Variety",
-    override.aes = list(alpha = 1, size = 2))) +
+    override.aes = list(alpha = 0.5, size = 2))) +
   labs(x = "Seed Spacing", y = "Crop Yield") +
   ggtitle('Correlation between Seed Spacing, Seed Variety, and Crop Yield')
 ```
@@ -236,10 +246,15 @@ m2 <- lm(yield ~ I(seed_spacing) + I(as.integer(variety)), data = clean_data)
 summary(m2)
 ```
 
+```{r model_3}
+m3 <- lm(yield ~ I(as.integer(variety)), data = clean_data)
+summary(m3)
+```
+
 #Analysis of Model Error
 Plugging in the resulting linear regression equation and plotting the error reveals a normally distributed data set. But the error is fairly high compaired to the yield values.
 ```{r model_prediction}
-clean_data$pred_yield <- 283.8 - 8.3462*clean_data$seed_spacing
+clean_data$pred_yield <- 245.1841 - 12.9005*as.integer(clean_data$variety)
 ```
 
 ```{r model_error}
