@@ -9,24 +9,34 @@ knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 ```{r packages}
 # Load all of the packages that you end up using in your analysis.
 
+#load the function libraries
 library(sp)
-#library(rgdal)
 library(raster)
 library(RColorBrewer)
+
+#loading the plotting libraries
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(gridExtra)
 ```
 
 # Introduction 
-This dataset contains geospatial data collected by a farmer during the planting of crops and then during the harvesting of those planted crops. The planting data is a sample size of 6,314 locations and include the latitude and longitude of where the crop was planted, the seed variety, seeding rate, seed spacing, and speed. The harvest data is a sample size of 16,626 locations and include the latitude and longitude of where the crop was harvested and the yield at that location. 
+This dataset contains geospatial agricultural data collected during the planting of crops and then again during the harvesting of those planted crops. The planting data sample size is 6,314 and includes the latitude and longitude of where the crop was planted, the seed variety, seeding rate (seeds planted per acre), seed spacing (inches), and speed. The harvest data sample size is 16,626 and includes the latitude and longitude of where the crops were harvested and the harvest yield at that location.
 
-The goal of the following analysis is to match the harvest data to the planting data in order to determine the harvest yield at each planting loaction. Then the planting data will be used to determine what planting variables, if any, demonstrate correlation to the harvest yield.
+The goal of the following analysis is to match the planting data to the harvest data according to proximity in order to determine the planting variables associated with each harvest yield location. The combined planting and harvest yield data will be used to determine what planting variables, if any, demonstrate correlation to the harvest yield.
 
 #Method
-At first I pursued the dataset by trying to calculate the distance between all the points using the "great circle distance," which accounts for the curvature of the earth. However, I quickly realized that there were way too many data points to use this method.
+At first I pursued the dataset by trying to calculate the distance between all the points using the "great circle distance," which accounts for the curvature of the earth. However, I quickly realized that there were way too many data points to come up with a solution in a timely manner.
 
 To reduce the amount of computation time, I decided to use the raster library. This is essentially a grid system that stores a value within each grid cell. This reduces the computation time from hours to seconds.
 
-### Conversion of Harvest Data into a Raster
-I'll convert the harvest dataframe to a spatial points data frame using the sp library. Then I'll set the projection to WGS1984 for the latitude and longitude coordinates. Next I'll use the raster package to create a grid, or raster, from the spatial extents of the harvest spatial points data frame. Finally, I'll use the rasterize function in the raster package to convert the spatial points data frame to a raster object. And I'll plot the harvest yield data in the raster to make sure everything looks as expected. Next I'll use the raster I developed to interpolate a yield value for each planting data point.
+### Raster Creation
+In order to create my raster, I write a function using the raster and sp libraries. The function accepts a planting csv file name and harvest csv file name as inputs and returns the combined data frame as the output.
+
+To develop the raster grid for the agricultural field, I convert both the harvest and planting data frames to spatial points data frames using the "sp" library. Then I set the projection to WGS 1984 for the latitude and longitude coordinates. Next I use the raster package to create a grid, or raster, from the spatial extents of the harvest spatial points data frame. I split the grid into 30x30 cells.
+
+Now that I have my raster grid, I use the rasterize function in the "raster" library to convert the planting spatial points data frame to a raster object. Next, I use the raster object I developed to extract the planting variable values at each harvest yield data location. I output a plot of each planting data raster and the combined data frame. It should also be noted that categorical values cannot be converted to a raster, so I transform the seed varietys to an integer during the raster analysis.
 
 ```{r extract_crop_yield_function}
 extract_crop_yield <- function(planting_filename, 
@@ -52,11 +62,7 @@ extract_crop_yield <- function(planting_filename,
   proj4string(harvest_pts) <- CRS("+init=epsg:4326")
   
   # Create raster from data extents
-<<<<<<< HEAD
-  r <- raster(harvest_pts,nrows=40, ncols=40)
-=======
-  r <- raster(harvest_pts, nrows=30, ncols=30)
->>>>>>> f7f80d1540e1c91f7c9fb6093ddb81d12c535294
+  r <- raster(harvest_pts,nrows=30, ncols=30)
   
   # Add values to raster
   planting_raster <- rasterize(planting_pts,r,
@@ -65,18 +71,11 @@ extract_crop_yield <- function(planting_filename,
                                        "seed_spacing",
                                        "speed"))
   
-  # Plot the values
-<<<<<<< HEAD
+  # Plot the planting raster values
   plot(planting_raster$variety, 
      xlab='Longitude',
      ylab='Latitude') +
   title("Seed Variety")
-=======
-  plot(planting_raster$seeding_rate, 
-     xlab='Longitude',
-     ylab='Latitude') +
-  title("Seeding Rate")
->>>>>>> f7f80d1540e1c91f7c9fb6093ddb81d12c535294
   
   plot(planting_raster$seeding_rate, 
      xlab='Longitude',
@@ -109,25 +108,16 @@ extract_crop_yield <- function(planting_filename,
 }
 ```
 
+### Running the Function
 Now I'm ready to run the function and save the new data frame to a csv file called "harvest_planting_data.csv"
+
 ```{r run_function_on_csv_files}
 data <- extract_crop_yield('planting_sample_data.csv', 'harvest_sample_data.csv')
 write.csv(data, file = "harvest_planting_data.csv")
 ```
 
-### Data Analysis
-Now that there is planting-related data at each harvest location, I can begin the exploratory data analysis to identify potential predictors of better harvest yield. Since there is only one dependent variable (yield) and four potential independent variables (variety, seeding rate, seed spacing, and speed), I"ll take the time to look in depth at each variable.
-
-```{r load_libraries}
-#loading the plotting libraries
-library(ggplot2)
-library(dplyr)
-#library(reshape)
-library(GGally)
-library(gridExtra)
-```
 ### Cleaning the Data
-It looks like a few outliers are having a big impact on the data, so I'll remove the top 1% and bottom 1% of values and get rid of the NA value prior to analyzing the dataset.
+After looking at the raster plots of the extracted planting data, it looks like a few outliers are having a big impact on the data. I remove the top 1% and bottom 1% of values and get rid of one NA value prior to analyzing the dataset.
 ```{r remove_outliers}
 clean_data <- subset(data, !is.na(variety) 
                      & !is.na(seeding_rate) 
@@ -141,8 +131,8 @@ clean_data <- subset(clean_data,speed > quantile(speed,probs = 0.01)
                      & seeding_rate < quantile(seeding_rate,probs = 0.99))
 ```
 
-### Yield
-The dependent variable. I'll take a look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, although the data is slightly skewed, it appears normally distributed.
+# Exploratory Data Analysis
+Now that there is planting-related data at each harvest location, I can begin the exploratory data analysis to identify potential predictors of better harvest yield. Since there is only one dependent variable (yield) and four potential independent variables (variety, seeding rate, seed spacing, and speed), I'll take the time to look in depth at each variable.
 
 ```{r distribution_plotting_function}
 box_and_hist <- function(data, variable, binwidth, variable_name) {
@@ -159,6 +149,9 @@ box_and_hist <- function(data, variable, binwidth, variable_name) {
 , nrow =1)
 }
 ```
+
+### Yield
+I start with the dependent variable: yield. I look at a box plot and histogram of this variable to identify the distribution and any potential outliers. After plotting, although the data is slightly skewed, it appears normally distributed with no extreme outliers.
 
 ```{r yield_distribution}
 box_and_hist(clean_data, clean_data$yield, 20, 'Crop Yield')
@@ -196,7 +189,7 @@ Next, I'll look at the speed. I'll take a look at a box plot and histogram of th
 box_and_hist(clean_data, clean_data$speed, 0.2, 'Speed')
 ```
 
-### Overview of Bivariate Relationships
+# Overview of Bivariate Relationships
 I'll create a data frame that does not include the identified outliers. And I'll look at the scatterplot of each variable against the crop yield. I'll also apply an exponential transformation to the axis for the planting speed.
 
 ```{r scatterplot_function}
@@ -234,7 +227,7 @@ cor.test(clean_data$seeding_rate, clean_data$yield)
 ### Seed Spacing
 It looks like closer seed spacing may be correlated to higher crop yield.
 ```{r seeding_rate_scatterplot}
-scatter(clean_data, clean_data$seed_spacing,"Seeding Spacing")
+scatter(clean_data, clean_data$seed_spacing,"Seed Spacing")
 cor.test(clean_data$seed_spacing, clean_data$yield)
 ```
 
